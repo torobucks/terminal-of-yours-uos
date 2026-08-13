@@ -1,0 +1,13 @@
+{
+  "name": "terminal-of-yours-server",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Terminal-of-Yours: user + agent share one local PowerShell terminal",
+  "main": "toy.js",
+  "scripts": {
+    "start": "node toy.js"
+  },
+  "dependencies": {
+    "node-pty": "^1.1.0"
+  }
+}

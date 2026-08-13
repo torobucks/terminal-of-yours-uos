@@ -1,0 +1,98 @@
+<svg
+  xmlns="http://www.w3.org/2000/svg"
+  viewBox="0 0 760 520"
+  font-family="ui-monospace, 'SF Mono', Consolas, 'Courier New', monospace"
+  font-size="12"
+  role="img"
+  aria-label="Terminal-of-Yours 架构图">
+
+  <!-- ===== 背景 ===== -->
+  <rect x="0" y="0" width="760" height="520" fill="#ffffff"/>
+  <text x="24" y="34" font-size="15" font-weight="700" fill="#1f2933">Terminal-of-Yours — 架构</text>
+  <line x1="24" y1="46" x2="736" y2="46" stroke="#d0d7de" stroke-width="1"/>
+
+  <!-- ===== 用户浏览器 ===== -->
+  <rect x="24" y="72" width="210" height="150" rx="6" fill="#eef5ff" stroke="#3b82f6" stroke-width="1.5"/>
+  <text x="40" y="94" font-size="13" font-weight="700" fill="#1d4ed8">用户浏览器</text>
+  <text x="40" y="114" fill="#475569" font-size="11">xterm.js 终端画面</text>
+
+  <rect x="40" y="126" width="178" height="26" rx="3" fill="#ffffff" stroke="#3b82f6"/>
+  <text x="50" y="143" fill="#334155">可视操作 / 复制输出</text>
+
+  <rect x="40" y="160" width="178" height="26" rx="3" fill="#ffffff" stroke="#3b82f6"/>
+  <text x="50" y="177" fill="#334155">POST 按键 → 用户优先锁</text>
+
+  <rect x="40" y="194" width="178" height="22" rx="3" fill="#ffffff" stroke="#3b82f6"/>
+  <text x="50" y="209" fill="#334155">状态条：user ⇄ agent</text>
+
+  <!-- ===== toy.js 服务 ===== -->
+  <rect x="275" y="72" width="210" height="190" rx="6" fill="#ecfdf5" stroke="#10b981" stroke-width="1.5"/>
+  <text x="291" y="94" font-size="13" font-weight="700" fill="#047857">toy.js 常驻服务</text>
+  <text x="291" y="114" fill="#475569" font-size="11">node-pty + 静态托管</text>
+
+  <rect x="291" y="126" width="178" height="26" rx="3" fill="#ffffff" stroke="#10b981"/>
+  <text x="301" y="143" fill="#334155">SSE 推输出流</text>
+
+  <rect x="291" y="160" width="178" height="26" rx="3" fill="#ffffff" stroke="#10b981"/>
+  <text x="301" y="177" fill="#334155">串行注入队列</text>
+
+  <rect x="291" y="194" width="178" height="26" rx="3" fill="#ffffff" stroke="#10b981"/>
+  <text x="301" y="211" fill="#334155">哨兵完成检测</text>
+
+  <rect x="291" y="228" width="178" height="22" rx="3" fill="#ffffff" stroke="#10b981"/>
+  <text x="301" y="243" fill="#334155">用户优先锁 / 模式切换</text>
+
+  <!-- ===== PowerShell PTY ===== -->
+  <rect x="526" y="72" width="210" height="190" rx="6" fill="#fef3c7" stroke="#f59e0b" stroke-width="1.5"/>
+  <text x="542" y="94" font-size="13" font-weight="700" fill="#b45309">PowerShell PTY</text>
+  <text x="542" y="114" fill="#475569" font-size="11">本地进程 (conpty)</text>
+
+  <rect x="542" y="126" width="178" height="26" rx="3" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="552" y="143" fill="#334155">用户：浏览器直接操作</text>
+
+  <rect x="542" y="160" width="178" height="26" rx="3" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="552" y="177" fill="#334155">ssh：终端内普通命令</text>
+
+  <rect x="542" y="194" width="178" height="26" rx="3" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="552" y="211" fill="#334155">vim / less / htop …</text>
+
+  <rect x="542" y="228" width="178" height="22" rx="3" fill="#ffffff" stroke="#f59e0b"/>
+  <text x="552" y="243" fill="#334155">127.0.0.1 仅本地</text>
+
+  <!-- ===== ZCode agent ===== -->
+  <rect x="275" y="300" width="210" height="120" rx="6" fill="#f3e8ff" stroke="#8b5cf6" stroke-width="1.5"/>
+  <text x="291" y="322" font-size="13" font-weight="700" fill="#6d28d9">ZCode agent</text>
+  <text x="291" y="342" fill="#475569" font-size="11">toy.sh 控制面</text>
+
+  <rect x="291" y="354" width="178" height="26" rx="3" fill="#ffffff" stroke="#8b5cf6"/>
+  <text x="301" y="371" fill="#334155">toy.sh run 注入命令</text>
+
+  <rect x="291" y="388" width="178" height="22" rx="3" fill="#ffffff" stroke="#8b5cf6"/>
+  <text x="301" y="403" fill="#334155">toy.sh keys 注入按键</text>
+
+  <!-- ===== 连接线 ===== -->
+  <line x1="234" y1="147" x2="275" y2="147" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="234" y1="171" x2="275" y2="171" stroke="#94a3b8" stroke-width="1.5"/>
+  <polygon points="275,147 269,143 269,151" fill="#94a3b8"/>
+
+  <line x1="485" y1="147" x2="526" y2="147" stroke="#94a3b8" stroke-width="1.5"/>
+  <line x1="485" y1="171" x2="526" y2="171" stroke="#94a3b8" stroke-width="1.5"/>
+  <polygon points="526,147 520,143 520,151" fill="#94a3b8"/>
+
+  <line x1="380" y1="262" x2="380" y2="300" stroke="#94a3b8" stroke-width="1.5"/>
+  <polygon points="380,300 376,294 384,294" fill="#94a3b8"/>
+
+  <!-- 数据流向标签 -->
+  <text x="246" y="138" font-size="9" fill="#64748b">用户键入</text>
+  <text x="488" y="138" font-size="9" fill="#64748b">注入/输出</text>
+  <text x="300" y="290" font-size="9" fill="#64748b">run / keys</text>
+
+  <!-- ===== 底部数据流说明 ===== -->
+  <rect x="24" y="440" width="712" height="56" rx="6" fill="#f8fafc" stroke="#cbd5e1"/>
+  <text x="40" y="462" font-size="11" fill="#334155">
+    数据流向：用户浏览器 ⇄ toy.js ⇄ PowerShell PTY（SSE 推流 + 串行队列）；ZCode 经 toy.sh 注入，与用户共用同一 PTY。
+  </text>
+  <text x="40" y="482" font-size="11" fill="#334155">
+    用户优先锁防止 agent 注入拼进用户的半行输入；agent 模式可显式禁止用户输入，确保 run/keys 畅通。
+  </text>
+</svg>

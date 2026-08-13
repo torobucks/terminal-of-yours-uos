@@ -1,0 +1,55 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Terminal-of-Yours</title>
+<link rel="stylesheet" href="/vendor/xterm.css">
+<style>
+  html, body { margin: 0; height: 100%; background: #1e1e1e; overflow: hidden; }
+  #bar {
+    position: relative; z-index: 10; /* 防 xterm 层遮挡按钮 */
+    display: flex; align-items: center; gap: 10px;
+    padding: 6px 12px; background: #252526; color: #ccc;
+    font: 12px/1.6 Consolas, "Courier New", monospace;
+    border-bottom: 1px solid #333; user-select: none;
+  }
+  #bar .dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+  #bar .ok { background: #4ec9b0; }
+  #bar .warn { background: #cca700; }
+  #bar .bad { background: #f14c4c; }
+  #bar .spacer { flex: 1; }
+  #bar .btn {
+    background: #3a3d41; color: #ccc; border: 1px solid #555;
+    padding: 2px 12px; cursor: pointer; border-radius: 3px;
+  }
+  #bar .btn:hover { background: #45484d; }
+  #bar .btn.primary { background: #0e639c; border-color: #0e639c; color: #fff; }
+  #bar .hint { color: #6a6a6a; font-size: 11px; }
+  #bar .paused-chip {
+    background: #7a5a1e; color: #fff; padding: 2px 10px; border-radius: 3px; display: none;
+    max-width: 55%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    cursor: pointer; /* 点击切换操作权 user ⇄ agent */
+  }
+  #bar .ro-chip { color: #9cdcfe; display: none; }
+  #terminal { position: absolute; top: 33px; left: 0; right: 0; bottom: 0; padding: 4px; }
+</style>
+</head>
+<body>
+<div id="bar">
+  <span class="dot ok" id="dot"></span>
+  <span id="sessionText" title="Terminal-of-Yours v0.2.0 · 本机协同终端">连接中…</span>
+  <button class="btn" id="btnDisconnect">断开连接</button>
+  <span class="spacer"></span>
+  <span class="paused-chip" id="pausedChip"></span>
+  <span class="ro-chip" id="roChip">👁 只读镜像</span>
+  <button class="btn primary" id="btnTakeover" style="display:none">接管输入</button>
+  <span class="hint" title="浏览器终端快捷键">Ctrl+Shift+C/V 复制粘贴 · Ctrl+C 中断</span>
+</div>
+<div id="terminal"></div>
+
+<script src="/vendor/xterm.min.js?v=1"></script>
+<script src="/vendor/addon-fit.min.js?v=1"></script>
+<script src="/app.js?v=2"></script>
+</body>
+</html>
