@@ -4,6 +4,9 @@
   "private": true,
   "description": "Terminal-of-Yours: user + agent share one local PowerShell terminal",
   "main": "toy.js",
+  "engines": {
+    "node": ">=18 <25"
+  },
   "scripts": {
     "start": "node toy.js"
   },

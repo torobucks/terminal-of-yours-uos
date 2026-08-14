@@ -1,8 +1,17 @@
 # ===== 隐私 / 本地状态（绝不入库） =====
-.workbuddy/          # 含用户名/路径的工作日志
-runtime/             # toy.pid / toy.port / toy.log（含命令历史，可能含用户名路径）
-*.log                # 任何日志
+# 注意：gitignore 不支持行尾注释（# 后是模式一部分），注释必须独立成行
+# .workbuddy: 含用户名/路径的工作日志
+.workbuddy/
+# runtime: 除示例配置外全部忽略（toy.pid/port/log 含命令历史，可能含用户名路径）
+runtime/*
+!runtime/config.example.txt
+# 任何日志
+*.log
 toy.console.log
+
+# ===== 内部文档（不随仓库发布） =====
+TOY_竞品分析.md
+TOY_迭代计划.md
 
 # ===== 依赖（由 npm install 生成） =====
 node_modules/

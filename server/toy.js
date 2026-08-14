@@ -32,7 +32,7 @@ const http = require('http');
 const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
-const { exec } = require('child_process');
+const { exec, spawnSync } = require('child_process');
 const pty = require('node-pty');
 
 const ROOT = process.env.TOY_DIR || path.resolve(__dirname, '..');
@@ -46,7 +46,7 @@ const MAX_REPLAY_EVENT = 16 * 1024;      // 回放事件单块上限（防 xterm
 
 // ---------- 配置（runtime/config.txt） ----------
 function loadConfig() {
-  const cfg = { port: 8787, shell: 'powershell.exe', buffer: 512 * 1024, runTimeout: 120, noProfile: false };
+  const cfg = { port: 8787, shell: 'auto', buffer: 512 * 1024, runTimeout: 120, noProfile: false };
   try {
     for (const raw of fs.readFileSync(CONFIG_FILE, 'utf8').split(/\r?\n/)) {
       const line = raw.trim();
@@ -65,6 +65,41 @@ function loadConfig() {
   return cfg;
 }
 const config = loadConfig();
+
+// ---------- shell 解析（config.shell 支持 auto） ----------
+// auto（默认）：优先 pwsh（PS7），找不到再查常见安装路径（pwsh 常不在 PATH），
+// 最后回退 powershell.exe（PS5.1，Windows 10/11 自带）。显式 shell= 时直接用。
+function resolveShell() {
+  if (config.shell !== 'auto') return config.shell;
+  if (process.platform === 'win32') {
+    const r = spawnSync('where', ['pwsh'], { encoding: 'utf8', timeout: 5000 });
+    if (r.status === 0 && r.stdout) return r.stdout.split(/\r?\n/)[0].trim() || 'pwsh';
+    for (const c of ['C:\\Program Files\\PowerShell\\7\\pwsh.exe', 'C:\\Program Files\\PowerShell\\6\\pwsh.exe']) {
+      if (fs.existsSync(c)) return c;
+    }
+    return 'powershell.exe';
+  }
+  // 非 Windows（P1 实验支持）：pwsh → bash
+  const r = spawnSync('which', ['pwsh'], { encoding: 'utf8', timeout: 5000 });
+  if (r.status === 0 && r.stdout) return r.stdout.split('\n')[0].trim() || 'pwsh';
+  return 'bash';
+}
+const SHELL = resolveShell();
+
+// ---------- shell 版本探测 ----------
+// 取主版本号（如 5 / 7）存入状态；失败返回 null——agent 拿到 null 应保守按 5.1 规则。
+function detectShellVersion(shell) {
+  const args = /powershell|pwsh/i.test(shell)
+    ? ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.Major']
+    : ['-c', 'echo ${BASH_VERSION%%[.-]*}'];
+  try {
+    const r = spawnSync(shell, args, { encoding: 'utf8', timeout: 8000 });
+    if (r.error || r.status !== 0) return null;
+    const m = (r.stdout || '').match(/\d+/);
+    return m ? parseInt(m[0], 10) : null; // m[0]=匹配串；无捕获组，m[1] 是 undefined
+  } catch (e) { return null; }
+}
+const SHELL_VERSION = detectShellVersion(SHELL);
 
 // ---------- 日志（轮转 + 脱敏：不记命令体明文） ----------
 function log(...args) {
@@ -134,7 +169,7 @@ function heartbeat() {
 function startSession() {
   const shellArgs = ['-NoLogo'];
   if (config.noProfile) shellArgs.push('-NoProfile');
-  const p = pty.spawn(config.shell, shellArgs, {
+  const p = pty.spawn(SHELL, shellArgs, {
     name: 'xterm-256color',
     cols: 120,
     rows: 30,
@@ -149,7 +184,7 @@ function startSession() {
   state.current = null;
   state.replay = [];       // 新会话从空白开始，清掉旧会话回放
   state.replayBytes = 0;
-  log('session started', `pid=${p.pid} shell=${config.shell}`);
+  log('session started', `pid=${p.pid} shell=${SHELL} v=${SHELL_VERSION}`);
 
   p.onData((data) => {
     replayPush(data);
@@ -321,8 +356,9 @@ const server = http.createServer(async (req, res) => {
     if (req.method === 'GET' && p === '/api/status') return sendJson(res, 200, {
       ...stateEvent(),
       pid: process.pid,
-      port: config.port,
-      shell: config.shell,
+      port: state.actualPort || config.port, // 实际监听端口（非配置端口）
+      shell: SHELL,               // 解析后的实际 shell（含路径），非配置值 auto
+      shellVersion: SHELL_VERSION, // 5 | 7 | null（null = 探测失败，agent 保守按 5.1）
       replayBytes: state.replayBytes,
       clientCount: state.clients.size,
       version: '0.2.0',
@@ -544,6 +580,7 @@ function tryListen(port) {
     }
   });
   server.listen(port, '127.0.0.1', () => {
+    state.actualPort = port; // status 返回实际监听端口（配置端口被占时 +1，agent 必须按实际连）
     try {
       fs.writeFileSync(path.join(RUNTIME, 'toy.port'), String(port));
       fs.writeFileSync(path.join(RUNTIME, 'toy.pid'), String(process.pid)); // 统一 pid 语义：node 真实 pid

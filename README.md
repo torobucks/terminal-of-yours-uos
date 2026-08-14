@@ -48,9 +48,44 @@
 
 ## 安装与配置
 
+### 前置条件清单
+
+- [ ] **Windows 10/11**（node-pty 依赖 ConPTY，Windows 7/8 不支持）；macOS/Linux 为实验支持
+- [ ] **Git Bash**（MSYS2 亦可；cmd / PowerShell 无法运行 `toy.sh`）
+- [ ] **Node.js 18–24**（node-pty 1.1.0 prebuild 实测兼容 18–24，`package.json` 已声明 `engines`）
+- [ ] **PowerShell 5.1**（Windows 10/11 自带，默认 shell）；装了 pwsh 则自动使用 PowerShell 7
+
+不确定环境时先跑 `bash scripts/toy.sh doctor` 自检，全绿再安装。
+
+### 一键安装（推荐）
+
+```bash
+git clone https://github.com/qwerd53/terminal-of-yours.git TerminalOfYours
+cd TerminalOfYours
+bash scripts/install.sh          # 环境自检 + 自动 npm install node-pty
+bash scripts/toy.sh start        # 启动服务并自动打开浏览器
+```
+
+- `install.sh` 自检失败会给出明确修复提示（如 Node 版本不匹配时建议用 nvm 切换 18–24）
+- 依赖安装失败时提示两条解决路径：node-pty prebuilt 换 Node 版本 / 本地编译链（python + node-gyp + VS Build Tools）
+
+### 注册为 agent skill
+
+`install.sh --link [目标目录]` 一键注册（优先软链；Windows 下软链失败自动 fallback 拷贝）：
+
+```bash
+bash scripts/install.sh --link ~/.claude/skills/terminal-of-yours
+```
+
+- 目标目录需含 `SKILL.md`（agent 按 skill 目录识别）；frontmatter 无需修改
+- 常见目录：`~/.claude/skills/`、`~/.zcode/skills/`、`~/.agents/skills/`（默认 `~/.workbuddy/skills/`）
+- 不注册也能用：直接 `bash scripts/toy.sh start` 本机试用
+
+### 传统方式（拷贝目录 / 免 install）
+
 本 skill 唯一运行时依赖是 `node-pty`（prebuilt，免编译）。两种方式都能跑起来：
 
-**方式 A — 原始仓库 / 首次克隆（推荐，零手动步骤）**
+**方式 A — 原始仓库 / 首次克隆（零手动步骤）**
 
 `toy.sh start` 是**幂等**的：脚本检测到 `server/node_modules/node-pty` 不存在时会**自动执行 `npm install`**，无需你手动装。
 
@@ -67,6 +102,13 @@ bash scripts/toy.sh start
 ```
 
 > 注意：`toy.sh` 通过 `BASH_SOURCE` 自定位到脚本所在目录，**不依赖你当前所在的 cwd**——在副本里任意位置执行都行。唯一前提是副本里保留 `server/`、`scripts/`、`web/` 三者完整。
+
+### PowerShell 7 支持
+
+- 默认 `shell=auto`：优先 `pwsh`（PS7，含常见安装路径 `C:\Program Files\PowerShell\7\pwsh.exe`），找不到回退 `powershell.exe`（PS5.1）
+- 显式覆盖：`runtime/config.txt` 写 `shell=pwsh` 或 `shell=powershell.exe`
+- `toy.sh status` 返回 `shell`（**解析后的实际 shell 路径**）与 `shellVersion`（`5` / `7` / `null`=探测失败）
+- PS7 下 `run` 支持 `&&` / `??` / 三元表达式；PS5.1 仍需单行分号合并——agent 依据 `shellVersion` 判断语法规则
 
 ## 快速开始
 
@@ -92,6 +134,7 @@ bash scripts/toy.sh stop                      # 停止服务
 | `toy.sh resume` | 清锁。由 agent 平台调用：收到 `paused` 后确认用户 → `resume` 再重跑同一命令 |
 | `toy.sh url` | 打印浏览器地址 |
 | `toy.sh kill-session` | 销毁当前终端会话（进程树），agent 的 run/keys 全部失效 |
+| `toy.sh doctor` | 环境自检（bash/node/shell/依赖），复用 `install.sh --check-only` |
 
 ### `run` 返回状态码
 
@@ -107,7 +150,7 @@ bash scripts/toy.sh stop                      # 停止服务
 ## 使用规则（agent 必读）
 
 1. **勿并发 run** —— 注入队列串行，一条命令完成前不要发下一条
-2. **PowerShell 5.1 兼容、单行** —— 无 `&&`、`??`、三元表达式；多行用分号合并成单行
+2. **按 shellVersion 选语法** —— run 前先查 `toy.sh status` 的 `shellVersion`：为 `7` 时允许 `&&`/`??`/三元表达式；为 `5` 或 `null` 时仍需 5.1 兼容、单行分号合并（无 `&&`、`??`、三元；多行用分号合并成单行）
 3. **不假设 conda 已激活** —— 需要时显式 `conda activate <env>`
 4. **全屏交互程序内禁止 run 注入** —— 用 `keys` 注入按键；退出用 `keys '\x03'` 或退出序列
 5. **输出含回显** —— `output` 是终端流（含命令回显、提示符、ANSI 序列），解析时注意
@@ -124,15 +167,16 @@ bash scripts/toy.sh stop                      # 停止服务
 ├── README.md         # 本文件
 ├── assets/           # icon.svg / architecture.svg 自包含矢量图
 ├── scripts/toy.sh    # 管理命令
+├── scripts/install.sh# 一键安装/环境自检（--check-only 供 toy.sh doctor 复用）
 ├── server/           # toy.js 常驻服务（node-pty 唯一依赖）
 ├── web/              # index.html + app.js + vendor/（@xterm/xterm 本地化）
-└── runtime/          # config.txt / toy.pid / toy.port / toy.log（10MB×3 轮转，脱敏）
+└── runtime/          # config.txt（参考 config.example.txt）/ toy.pid / toy.port / toy.log（10MB×3 轮转，脱敏）
 ```
 
 ## 边界与已知限制（一期）
 
 - **单用户单 agent** —— 多浏览器标签只有首连可输入；无鉴权（仅绑定 127.0.0.1 + Host/Origin 校验）
-- **PowerShell 5.1** —— 注入命令须 5.1 兼容语法；exit code 仅 native 命令可靠
+- **PowerShell 5.1 或 7** —— 默认 `shell=auto` 自动优先 pwsh（PS7）否则回退 5.1；注入命令语法按 `status.shellVersion` 判断（5.1：单行分号；7：可用 `&&`/`??`/三元）。exit code 仅 native 命令可靠
 - **交互程序内禁止 run 注入** —— vim/ssh/less 内用 `keys` 注入
 - **不跨重启持久** —— 机器重启 / stop 后会话丢失（agent 对话历史记忆兜底）；kill-session 后 `start` 自动重建
 - **输出含回显与 ANSI 序列** —— `output` 是终端流，解析时注意

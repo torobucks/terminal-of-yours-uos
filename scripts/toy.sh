@@ -12,6 +12,7 @@
 #   toy.sh resume              清用户锁 (resume)，由 agent 平台在对话确认后调用
 #   toy.sh url                 打印浏览器地址
 #   toy.sh kill-session        销毁当前终端会话 (进程树)
+#   toy.sh doctor              环境自检 (复用了 install.sh --check-only)
 #
 # 环境变量: TOY_NO_OPEN=1 时不自动打开浏览器
 
@@ -44,16 +45,21 @@ get_port() {
   fi
 }
 
-api() { # api METHOD PATH [DATA]
+api() { # api METHOD PATH [DATA]  — 失败时明确报错而非静默
   local method="$1" path="$2" data="${3:-}"
-  local port
+  local port out
   port="$(get_port)"
   if [[ -n "$data" ]]; then
-    curl -s -m 3660 -X "$method" "http://127.0.0.1:$port$path" \
-      -H "Content-Type: application/json" -H "X-TOY: 1" -d "$data"
+    out="$(curl -s -m 3660 -X "$method" "http://127.0.0.1:$port$path" \
+      -H "Content-Type: application/json" -H "X-TOY: 1" -d "$data" 2>/dev/null)" || out=""
   else
-    curl -s -m 60 -X "$method" "http://127.0.0.1:$port$path" -H "X-TOY: 1"
+    out="$(curl -s -m 60 -X "$method" "http://127.0.0.1:$port$path" -H "X-TOY: 1" 2>/dev/null)" || out=""
   fi
+  if [[ -z "$out" || "$out" != \{* ]]; then
+    echo "错误：无法连接 TOY 服务（127.0.0.1:$port）——服务未运行？先执行 bash $0 start" >&2
+    return 1
+  fi
+  printf '%s' "$out"
 }
 
 cmd_start() {
@@ -153,6 +159,10 @@ cmd_kill_session() {
   api POST /api/kill-session
 }
 
+cmd_doctor() {
+  bash "$ROOT/scripts/install.sh" --check-only
+}
+
 case "${1:-}" in
   start)         cmd_start ;;
   status)        cmd_status ;;
@@ -164,5 +174,6 @@ case "${1:-}" in
   mode)          shift; cmd_mode "$@" ;;
   url)           cmd_url ;;
   kill-session)  cmd_kill_session ;;
+  doctor)        cmd_doctor ;;
   *) sed -n '2,20p' "$0" >&2; exit 1 ;;
 esac

@@ -1,0 +1,7 @@
+# 脚本强制 LF：防止 Git for Windows autocrlf 把 .sh 转成 CRLF
+# （bash 能跑 CRLF 脚本，但 mac/Linux 实验支持时需要 LF）
+*.sh text eol=lf
+*.js text eol=lf
+*.md text
+*.svg text
+*.txt text

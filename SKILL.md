@@ -39,8 +39,9 @@ bash <skill>/scripts/toy.sh {start|status|stop|run|keys|pause|resume|url|kill-se
 
 ### start / status / stop
 - `start`：幂等拉起常驻服务（首次自动 `npm install node-pty`），成功后自动打开浏览器（`TOY_NO_OPEN=1` 可关闭）。实际端口见 `runtime/toy.port`（默认 8787，被占自动 +1）
-- `status`：返回 JSON（会话存活、用户锁状态、排队数、端口、shell 等）
+- `status`：返回 JSON（会话存活、用户锁状态、排队数、端口、shell、shellVersion 等）
 - `stop`：停止服务（终端会话随服务停止）
+- `doctor`：环境自检（bash / node 版本 / shell 探测 / node-pty 依赖），复用 `install.sh --check-only`，安装前或排查问题时先跑
 
 ### run —— agent 注入命令并等待完成
 ```bash
@@ -89,7 +90,7 @@ keys 原样写入终端，不带哨兵、不置用户锁。用于 vim/ssh/less �
 ## 使用规则（agent 必读）
 
 1. **勿并发 run**：注入队列串行，但长时间等待会占队。一条命令完成前不要发下一条
-2. **命令用 PowerShell 5.1 兼容语法、单行**：本机是 PS 5.1（无 pwsh 7），不支持 `&&`、`??`、三元表达式；多行命令用分号合并成单行（反引号续行在多行注入下不可靠）
+2. **按 shellVersion 选语法**：run 前先查 `toy.sh status` 的 `shellVersion` 字段——为 `7` 时允许 `&&`、`??`、三元表达式；为 `5` 或 `null`（探测失败，保守处理）时按 PowerShell 5.1 兼容语法、单行（无 `&&`/`??`/三元；多行用分号合并成单行，反引号续行不可靠）
 3. **不假设 conda 已激活**：profile 默认加载，但环境激活状态未知；需要时显式 `conda activate <env>`（或依赖用户当前环境）
 4. **全屏交互程序（vim/ssh/less/htop 类）内禁止 run 注入**：注入的命令会被当按键吞掉或破坏界面。交互程序内用 `keys` 注入按键；要退出用 `keys '\x03'` 或直接注入退出序列
 5. **输出含回显**：`output` 是终端流（含命令回显、提示符、ANSI 序列），解析时注意
@@ -112,3 +113,15 @@ keys 原样写入终端，不带哨兵、不置用户锁。用于 vim/ssh/less �
 - 哨兵完成检测：注入 `; Write-Output "__TOY_DONE_<token>_$([int]$LASTEXITCODE)__"`，匹配已展开的数字结尾（PSReadLine 回显的 `$([int]...)` 不匹配，天然区分）；`[int]` 保证 cmdlet（$null）也展开为 0
 - 回放：浏览器断线重连 → 清屏 + 全量回放缓冲（≤512KB，config 可调）→ 切实时流
 - 多标签：首连可输入，后续连接只读镜像（页面可「接管输入」切换活动连接）
+
+## 平台与 shell
+
+| 环境 | 状态 | 说明 |
+| --- | --- | --- |
+| Windows 10/11 + Git Bash | ✅ 首选 | node-pty 依赖 ConPTY，Windows 7/8 不支持 |
+| PowerShell 7 (pwsh) | ✅ 自动优先 | `shell=auto` 默认：找到 pwsh 即用 PS7，否则回退 PS5.1；`runtime/config.txt` 可 `shell=pwsh` / `shell=powershell.exe` 显式覆盖 |
+| PowerShell 5.1 | ✅ 回退保底 | Windows 10/11 自带；语法规则见「使用规则 #2」 |
+| macOS / Linux | ⚠️ 实验支持 | 注入哨兵仍为 PowerShell 专用，跨 shell 支持（bash/zsh）未完成；`status.shell` 会解析为 bash |
+| Node.js | ⚠️ 18–24 | node-pty 1.1.0 为 prebuild、与 Node 主版本绑定（已实测兼容 18–24）；`package.json` 已声明 `engines`，不匹配时 `toy.sh doctor` 会提示 |
+
+`toy.sh status` 的 `shell` 字段是**解析后的实际 shell 路径**（非配置值 `auto`），`shellVersion` 为 `5` / `7` / `null`——agent 的 run 语法规则必须按它判断。
