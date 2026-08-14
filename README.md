@@ -12,8 +12,12 @@
   <img alt="version" src="https://img.shields.io/badge/version-0.2.0-0e639c">
   <img alt="platform" src="https://img.shields.io/badge/platform-Windows-blue">
   <img alt="language" src="https://img.shields.io/badge/stack-Node%20%2F%20node--pty%20%2F%20xterm.js-green">
-  <img alt="shell" src="https://img.shields.io/badge/shell-PowerShell%205.1-informational">
+  <img alt="shell" src="https://img.shields.io/badge/shell-PowerShell%205.1%20%2F%207-informational">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-yellow">
+</p>
+
+<p align="center">
+  🇨🇳 中文 &nbsp;|&nbsp; 🇬🇧 <a href="README.en.md">English</a>
 </p>
 
 ---

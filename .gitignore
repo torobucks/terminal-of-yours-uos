@@ -9,9 +9,8 @@ runtime/*
 *.log
 toy.console.log
 
-# ===== 内部文档（不随仓库发布） =====
-TOY_竞品分析.md
-TOY_迭代计划.md
+# ===== 本地产出 / 文档草稿（不入仓库，避免污染） =====
+documents/
 
 # ===== 依赖（由 npm install 生成） =====
 node_modules/
