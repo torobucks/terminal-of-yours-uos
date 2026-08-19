@@ -45,6 +45,16 @@ get_port() {
   fi
 }
 
+# 跨平台打开浏览器：Windows/MSYS 用 cmd start，Linux/macOS 用 xdg-open/open
+open_browser() {
+  local url="$1"
+  case "$(uname -s)" in
+    MINGW*|MSYS*|CYGWIN*)  cmd //c start "" "$url" >/dev/null 2>&1 || true ;;
+    Darwin*)               open "$url" >/dev/null 2>&1 || true ;;
+    *)                     xdg-open "$url" >/dev/null 2>&1 || true ;;
+  esac
+}
+
 api() { # api METHOD PATH [DATA]  — 失败时明确报错而非静默
   local method="$1" path="$2" data="${3:-}"
   local port out
@@ -89,7 +99,7 @@ cmd_start() {
        curl -sf -o /dev/null -m 2 "http://127.0.0.1:$port/api/status" -H "X-TOY: 1"; then
       echo "已启动: http://127.0.0.1:$port (pid $(cat "$PID_FILE" 2>/dev/null || echo '?'))"
       if [[ "${TOY_NO_OPEN:-0}" != "1" ]]; then
-        cmd //c start "" "http://127.0.0.1:$port" >/dev/null 2>&1 || true
+        open_browser "http://127.0.0.1:$port"
       fi
       return 0
     fi
@@ -112,7 +122,15 @@ cmd_stop() {
   if is_running; then
     local pid
     pid="$(cat "$PID_FILE")"
-    taskkill //F //T //PID "$pid" >/dev/null 2>&1 || kill "$pid" 2>/dev/null || true
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*)
+        taskkill //F //T //PID "$pid" >/dev/null 2>&1 || kill "$pid" 2>/dev/null || true
+        ;;
+      *)
+        # Linux/macOS：优先杀整个进程组（node-pty 进程通常为组长，pgid==pid）
+        kill -- -"$pid" >/dev/null 2>&1 || kill "$pid" >/dev/null 2>&1 || true
+        ;;
+    esac
     rm -f "$PID_FILE" "$PORT_FILE"
     echo "已停止"
   else

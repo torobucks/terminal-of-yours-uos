@@ -3,18 +3,19 @@ name: terminal-of-yours
 description: >-
   Shared local terminal collaboration between an AI agent and a human user.
   This skill should be used when an agent needs to run or inject commands into a
-  local PowerShell terminal that the user can see and operate from their browser
-  in real time, or when the user and agent must share one terminal session —
+  local shell terminal (PowerShell on Windows; bash/zsh on Linux/UOS) that the
+  user can see and operate from their browser in real time, or when the user and
+  agent must share one terminal session —
   e.g. collaborative shell work, driving a remote host through ssh over a shared
   PTY, or controlling interactive programs (vim/ssh/less) via key injection.
-version: 0.2.0
-tags: [terminal, powershell, agent-collaboration, node-pty, local-dev, cli, ssh]
+version: 0.3.0
+tags: [terminal, bash, powershell, agent-collaboration, node-pty, local-dev, cli, linux, ssh]
 license: MIT
 ---
 
 # Terminal-of-Yours
 
-用户浏览器（xterm.js）与 agent（ZCode）**协同控制一个本地 PowerShell 终端**：
+用户浏览器（xterm.js）与 agent（ZCode）**协同控制一个本地终端**（Windows: PowerShell；Linux/UOS: bash/zsh）：
 - 用户在自己的浏览器终端里干活，随时能看到 agent 注入的命令和输出（所见即所得）
 - agent 通过 `toy.sh run` 注入命令、`toy.sh keys` 注入按键，与用户共用同一终端
 - ssh 是终端里的普通命令：需要操作远端时，在终端里 ssh 即可，之后 run/keys 的注入自然流经 ssh 到达远端
@@ -24,7 +25,7 @@ license: MIT
 
 ## 何时使用（agent 触发器）
 
-- 用户想在浏览器里直接操作一个本地 PowerShell 终端，同时让 agent 也能注入命令、看到同一画面
+- 用户想在浏览器里直接操作一个本地终端（PowerShell / bash / zsh），同时让 agent 也能注入命令、看到同一画面
 - agent 需要在本地终端执行命令并取回输出与退出码（`toy.sh run`）
 - 需要向 vim / ssh / less 等全屏交互程序注入按键（`toy.sh keys`）
 - 需要通过共享 PTY 操作远端：在终端里 `ssh` 即可，之后的注入自然流经 ssh
@@ -90,11 +91,11 @@ keys 原样写入终端，不带哨兵、不置用户锁。用于 vim/ssh/less �
 ## 使用规则（agent 必读）
 
 1. **勿并发 run**：注入队列串行，但长时间等待会占队。一条命令完成前不要发下一条
-2. **按 shellVersion 选语法**：run 前先查 `toy.sh status` 的 `shellVersion` 字段——为 `7` 时允许 `&&`、`??`、三元表达式；为 `5` 或 `null`（探测失败，保守处理）时按 PowerShell 5.1 兼容语法、单行（无 `&&`/`??`/三元；多行用分号合并成单行，反引号续行不可靠）
+2. **按 `kind`/`shellVersion` 选语法**：run 前先查 `toy.sh status` 的 `kind`（`powershell` / `posix`）与 `shellVersion`——`kind=posix`（Linux/UOS 的 bash/zsh）时按原生 shell 语法（`&&`、`||`、`$?`）；`kind=powershell` 时 `shellVersion` 为 `7` 允许 `&&`/`??`/三元表达式、为 `5` 或 `null` 则按 PowerShell 5.1 兼容语法单行化
 3. **不假设 conda 已激活**：profile 默认加载，但环境激活状态未知；需要时显式 `conda activate <env>`（或依赖用户当前环境）
 4. **全屏交互程序（vim/ssh/less/htop 类）内禁止 run 注入**：注入的命令会被当按键吞掉或破坏界面。交互程序内用 `keys` 注入按键；要退出用 `keys '\x03'` 或直接注入退出序列
 5. **输出含回显**：`output` 是终端流（含命令回显、提示符、ANSI 序列），解析时注意
-6. **exit code 语义**：`$LASTEXITCODE` 只在 native 命令后更新；cmdlet（如 `Get-ChildItem`）后是残留值。要拿可靠退出码，用 `cmd /c '...'` 包装
+6. **exit code 语义**：PowerShell 下 `$LASTEXITCODE` 只在 native 命令后更新，要可靠退出码用 `cmd /c '...'` 包装；POSIX（bash/zsh）下普通命令的 `$?` 即真实退出码，哨兵已携带，`exitCode` 字段可靠
 7. **run 被 paused 时**：命令未执行，立即返回。agent 应在对话中向用户确认，用户同意后 `toy.sh resume` 再重新 run 同一命令
 8. **会话重建**：kill-session / 服务停止后会话状态丢失——agent 依赖自己的对话历史记忆上下文，重建会话后从当前目录/环境重新确认状态
 9. **多标签/输入接管**：浏览器多标签时，任何标签输入都会**自动接管**终端（输入即接管，最后输入的标签获得控制权，其余变只读镜像）；也可用页面「接管输入」按钮显式切换；agent 不受此限制（run/keys 总是可用）
@@ -105,12 +106,15 @@ keys 原样写入终端，不带哨兵、不置用户锁。用于 vim/ssh/less �
 ```
 浏览器 xterm.js ←SSE→ toy.js(node-pty + 静态托管) ←toy.sh→ ZCode
      ↕ POST 按键(用户优先锁)      ↕ 串行注入队列/哨兵
-              PowerShell PTY（本地进程）
+              本地 Shell PTY（Linux: bash/zsh · Windows: PowerShell）
                 ├─ 用户：直接在浏览器终端操作
                 └─ ssh：终端里的普通命令（连任意远端）
 ```
 
-- 哨兵完成检测：注入 `; Write-Output "__TOY_DONE_<token>_$([int]$LASTEXITCODE)__"`，匹配已展开的数字结尾（PSReadLine 回显的 `$([int]...)` 不匹配，天然区分）；`[int]` 保证 cmdlet（$null）也展开为 0
+- 哨兵完成检测（按 `kind` 生成）：
+  - PowerShell：注入 `; Write-Output "__TOY_DONE_<token>_$([int]$LASTEXITCODE)__"`，`[int]` 保证 cmdlet（$null）也展开为 0
+  - POSIX（bash/zsh）：注入 `; echo "__TOY_DONE_<token>_$?__"`，`$?` 即上一条命令真实退出码
+  - 二者都匹配已展开的**数字结尾**，readline/PSReadLine 回显的未展开文本（`$?` / `$([int]...)`）不匹配，天然区分
 - 回放：浏览器断线重连 → 清屏 + 全量回放缓冲（≤512KB，config 可调）→ 切实时流
 - 多标签：首连可输入，后续连接只读镜像（页面可「接管输入」切换活动连接）
 
@@ -118,10 +122,11 @@ keys 原样写入终端，不带哨兵、不置用户锁。用于 vim/ssh/less �
 
 | 环境 | 状态 | 说明 |
 | --- | --- | --- |
-| Windows 10/11 + Git Bash | ✅ 首选 | node-pty 依赖 ConPTY，Windows 7/8 不支持 |
-| PowerShell 7 (pwsh) | ✅ 自动优先 | `shell=auto` 默认：找到 pwsh 即用 PS7，否则回退 PS5.1；`runtime/config.txt` 可 `shell=pwsh` / `shell=powershell.exe` 显式覆盖 |
-| PowerShell 5.1 | ✅ 回退保底 | Windows 10/11 自带；语法规则见「使用规则 #2」 |
-| macOS / Linux | ⚠️ 实验支持 | 注入哨兵仍为 PowerShell 专用，跨 shell 支持（bash/zsh）未完成；`status.shell` 会解析为 bash |
+| Windows 10/11 + Git Bash | ✅ 首选 | node-pty 依赖 ConPTY；Windows 7/8 不支持 |
+| **Linux / UOS v20 + bash** | ✅ 原生 | 默认用户登录 shell（`$SHELL`，通常 bash），也可 zsh/fish；POSIX 哨兵 `echo ..._$?`；`kind=posix` |
+| macOS + bash/zsh | ✅ 原生 | 同 Linux，POSIX 哨兵；`open` 打开浏览器 |
+| PowerShell 7 (pwsh) | ✅ 自动优先（Win） | Windows 下 `shell=auto` 找到 pwsh 即用 PS7，否则回退 PS5.1；Linux 装了 pwsh 可 `shell=pwsh` 显式切 |
+| PowerShell 5.1 | ✅ 回退保底（Win） | Windows 10/11 自带；语法规则见「使用规则 #2」 |
 | Node.js | ⚠️ 18–24 | node-pty 1.1.0 为 prebuild、与 Node 主版本绑定（已实测兼容 18–24）；`package.json` 已声明 `engines`，不匹配时 `toy.sh doctor` 会提示 |
 
-`toy.sh status` 的 `shell` 字段是**解析后的实际 shell 路径**（非配置值 `auto`），`shellVersion` 为 `5` / `7` / `null`——agent 的 run 语法规则必须按它判断。
+`toy.sh status` 的 `shell` 字段是**解析后的实际 shell 路径**（非配置值 `auto`），`kind` 为 `powershell` / `posix`，`shellVersion` 为主版本号（PowerShell 5/7、bash 5、zsh 5...）/ `null`（探测失败）——agent 的 run 语法规则必须按 `kind` + `shellVersion` 判断。

@@ -5,14 +5,14 @@
 <h1 align="center">Terminal-of-Yours (TOY)</h1>
 
 <p align="center">
-  A user's browser and an AI agent <b>collaboratively control the same local PowerShell terminal</b> · what you see is what you get
+  A user's browser and an AI agent <b>collaboratively control the same local terminal</b> · what you see is what you get (native Linux / UOS / Windows support)
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-0e639c">
-  <img alt="platform" src="https://img.shields.io/badge/platform-Windows-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-0.3.0-0e639c">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue">
   <img alt="language" src="https://img.shields.io/badge/stack-Node%20%2F%20node--pty%20%2F%20xterm.js-green">
-  <img alt="shell" src="https://img.shields.io/badge/shell-PowerShell%205.1%20%2F%207-informational">
+  <img alt="shell" src="https://img.shields.io/badge/shell-bash%20%2F%20zsh%20%2F%20PowerShell-informational">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-yellow">
 </p>
 
@@ -44,7 +44,7 @@ You open a terminal in your browser to get work done, and an AI agent can inject
 ```
 browser xterm.js ←SSE→ toy.js (node-pty + static hosting) ←toy.sh→ ZCode
      ↕ POST keystrokes (user-priority lock)      ↕ serial injection queue / sentinel
-              PowerShell PTY (local process, conpty)
+              Local Shell PTY (Linux: bash/zsh · Windows: PowerShell)
                 ├─ user: operate directly in the browser terminal
                 └─ ssh: a normal command inside the terminal (to any remote host)
 ```
@@ -53,10 +53,13 @@ browser xterm.js ←SSE→ toy.js (node-pty + static hosting) ←toy.sh→ ZCode
 
 ### Prerequisites
 
-- [ ] **Windows 10/11** (node-pty depends on ConPTY, not supported on Windows 7/8); macOS/Linux are experimental.
-- [ ] **Git Bash** (MSYS2 also works; `cmd` / PowerShell cannot run `toy.sh`).
+- [ ] **System**: Windows 10/11 (node-pty depends on ConPTY, not supported on Win 7/8) or **Linux / macOS (UOS v20 etc., natively supported)**.
+- [ ] **Git Bash** (Windows needs MSYS2/Git Bash; Linux/macOS use the system bash — `toy.sh` is a bash script).
 - [ ] **Node.js 18–24** (node-pty 1.1.0 prebuild verified compatible with 18–24; declared in `package.json` `engines`).
-- [ ] **PowerShell 5.1** (ships with Windows 10/11, default shell); if pwsh is installed, PowerShell 7 is used automatically.
+- [ ] **Shell**: Windows defaults to PowerShell 5.1/7; **Linux/macOS defaults to the user's login shell (bash/zsh — native Linux terminal)**.
+
+> On Linux, if the first `npm install` has no matching node-pty prebuild, a local build chain is needed:
+> `sudo apt-get install -y build-essential python3` (UOS/Debian).
 
 If unsure about your environment, run `bash scripts/toy.sh doctor` for a self-check first; install once everything is green.
 
@@ -70,7 +73,7 @@ bash scripts/toy.sh start        # start the service and open the browser automa
 ```
 
 - If `install.sh` self-check fails, it gives clear fix hints (e.g. suggests `nvm` to switch to Node 18–24 when the version mismatches).
-- On dependency install failure, it suggests two paths: switch Node version for the node-pty prebuild / use a local build chain (python + node-gyp + VS Build Tools).
+- On dependency install failure, it suggests two paths: switch Node version for the node-pty prebuild / use a local build chain (Windows: python + node-gyp + VS Build Tools; Linux: make + gcc/g++ + python3).
 
 ### Register as an agent skill
 
@@ -106,12 +109,14 @@ bash scripts/toy.sh start
 
 > Note: `toy.sh` self-locates via `BASH_SOURCE` to the script's directory, **independent of your current cwd** — you can run it from anywhere inside the copy. The only requirement is that `server/`, `scripts/`, and `web/` remain intact in the copy.
 
-### PowerShell 7 support
+### Shell support (Windows PowerShell / Linux POSIX)
 
-- Default `shell=auto`: prefers `pwsh` (PS7, including the common install path `C:\Program Files\PowerShell\7\pwsh.exe`), falls back to `powershell.exe` (PS5.1) if not found.
-- Explicit override: write `shell=pwsh` or `shell=powershell.exe` in `runtime/config.txt`.
-- `toy.sh status` returns `shell` (**the resolved actual shell path**) and `shellVersion` (`5` / `7` / `null` = detection failed).
-- Under PS7, `run` supports `&&` / `??` / ternary expressions; PS5.1 still requires single-line semicolon merging — the agent decides syntax rules based on `shellVersion`.
+- Default `shell=auto`:
+  - **Windows**: prefers `pwsh` (PS7, including `C:\Program Files\PowerShell\7\pwsh.exe`), falls back to `powershell.exe` (PS5.1).
+  - **Linux/macOS (UOS)**: prefers the user's login shell (`$SHELL`), then bash → zsh → sh — a native Linux terminal. If pwsh is installed it can be selected explicitly.
+- Explicit override: write `shell=pwsh` / `shell=powershell.exe` (Windows) or `shell=/bin/bash` / `shell=/usr/bin/zsh` (Linux) in `runtime/config.txt`.
+- `toy.sh status` returns `shell` (**the resolved actual shell path**) and `kind` (`powershell` / `posix`) plus `shellVersion` (PowerShell 5/7, bash 5, zsh 5, ...; `null` = detection failed).
+- Under PowerShell 7, `run` supports `&&` / `??` / ternary expressions; PowerShell 5.1 still requires single-line semicolon merging — the agent decides syntax rules based on `kind`/`shellVersion`. Under POSIX (bash/zsh) the normal shell syntax applies.
 
 ## Quick start
 
@@ -153,7 +158,7 @@ bash scripts/toy.sh stop                      # stop the service
 ## Usage rules (agent must-read)
 
 1. **No concurrent run** — The injection queue is serial; do not send the next command before the previous one finishes.
-2. **Choose syntax by shellVersion** — Before `run`, check `shellVersion` from `toy.sh status`: `7` allows `&&`/`??`/ternary; `5` or `null` still needs 5.1-compatible single-line semicolon merging (no `&&`, `??`, ternary; merge multiple lines into one with semicolons).
+2. **Choose syntax by `kind`/`shellVersion`** — Before `run`, check `toy.sh status`: `kind` is `powershell` (Windows) or `posix` (Linux/macOS). Under PowerShell, `shellVersion` `7` allows `&&`/`??`/ternary; `5` or `null` still needs 5.1-compatible single-line semicolon merging. Under POSIX, use the normal bash/zsh syntax.
 3. **Don't assume conda is activated** — Explicitly `conda activate <env>` when needed.
 4. **No run injection inside full-screen interactive programs** — Use `keys` for injection; exit with `keys '\x03'` or an exit sequence.
 5. **Output includes echo** — `output` is the terminal stream (including command echo, prompt, ANSI sequences); be careful when parsing.
@@ -180,7 +185,7 @@ bash scripts/toy.sh stop                      # stop the service
 ## Boundaries & known limitations (phase 1)
 
 - **Single user, single agent** — Among multiple browser tabs, only the first connection can input; no authentication (only `127.0.0.1` + Host/Origin validation).
-- **PowerShell 5.1 or 7** — Default `shell=auto` prefers `pwsh` (PS7) and falls back to 5.1; injection syntax is judged by `status.shellVersion` (5.1: single-line semicolon; 7: `&&`/`??`/ternary allowed). Exit code is only reliable for native commands.
+- **Shell judged by `status.kind`** — `status.kind` is `powershell` (Windows) or `posix` (Linux/macOS; bash/zsh/fish native terminal). Under POSIX the agent uses bash syntax (sentinel via `$?`); `status.shellVersion` is the major version (bash 5 / zsh 5, etc.). Exit code is only reliable for native commands.
 - **No run injection inside interactive programs** — Use `keys` for vim/ssh/less.
 - **Not persistent across restarts** — After machine reboot / stop, the session is lost (the agent's conversation history backs it up); `start` auto-rebuilds after kill-session.
 - **Output includes echo and ANSI sequences** — `output` is the terminal stream; be careful when parsing.
@@ -192,7 +197,8 @@ This skill was implemented after a grilling design tree (20+ decisions) + sub-ag
 - `$LASTEXITCODE__` variable-swallowing bug (underscore belongs to the variable name) → braces + `[int]` coercion.
 - node-pty PTY resize crash after exit under Node 22 → all wrapped in try/catch.
 - PSReadLine half-line input concatenated with injection → prepend `\x03` to clear the line on injection.
-- Windows browser auto-open → `cmd //c start "" "URL"`.
+- Windows browser auto-open → `cmd //c start "" "URL"`; Linux → `xdg-open`.
+- POSIX sentinel: bash/zsh use `echo "..._$?__"` to carry the previous command's exit code; the regex only matches a numeric ending, so readline echo is naturally distinguished from real output.
 
 ---
 

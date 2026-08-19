@@ -5,14 +5,14 @@
 <h1 align="center">Terminal-of-Yours (TOY)</h1>
 
 <p align="center">
-  用户浏览器与 AI agent <b>协同控制同一个本地 PowerShell 终端</b> · 所见即所得
+  用户浏览器与 AI agent <b>协同控制同一个本地终端</b> · 所见即所得（原生支持 Linux / UOS / Windows）
 </p>
 
 <p align="center">
-  <img alt="version" src="https://img.shields.io/badge/version-0.2.0-0e639c">
-  <img alt="platform" src="https://img.shields.io/badge/platform-Windows-blue">
+  <img alt="version" src="https://img.shields.io/badge/version-0.3.0-0e639c">
+  <img alt="platform" src="https://img.shields.io/badge/platform-Windows%20%7C%20Linux%20%7C%20macOS-blue">
   <img alt="language" src="https://img.shields.io/badge/stack-Node%20%2F%20node--pty%20%2F%20xterm.js-green">
-  <img alt="shell" src="https://img.shields.io/badge/shell-PowerShell%205.1%20%2F%207-informational">
+  <img alt="shell" src="https://img.shields.io/badge/shell-bash%20%2F%20zsh%20%2F%20PowerShell-informational">
   <img alt="license" src="https://img.shields.io/badge/license-MIT-yellow">
 </p>
 
@@ -45,7 +45,7 @@
 ```
 浏览器 xterm.js ←SSE→ toy.js(node-pty + 静态托管) ←toy.sh→ ZCode
      ↕ POST 按键(用户优先锁)      ↕ 串行注入队列/哨兵
-              PowerShell PTY（本地进程，conpty）
+              本地 Shell PTY（Linux: bash/zsh · Windows: PowerShell）
                 ├─ 用户：直接在浏览器终端操作
                 └─ ssh：终端里的普通命令（连任意远端）
 ```
@@ -54,10 +54,13 @@
 
 ### 前置条件清单
 
-- [ ] **Windows 10/11**（node-pty 依赖 ConPTY，Windows 7/8 不支持）；macOS/Linux 为实验支持
-- [ ] **Git Bash**（MSYS2 亦可；cmd / PowerShell 无法运行 `toy.sh`）
+- [ ] **系统**：Windows 10/11（node-pty 依赖 ConPTY，Win 7/8 不支持）或 **Linux / macOS（UOS v20 等原生支持）**
+- [ ] **Git Bash**（Windows 需 MSYS2/Git Bash；Linux/macOS 用系统自带 bash 即可，`toy.sh` 是 bash 脚本）
 - [ ] **Node.js 18–24**（node-pty 1.1.0 prebuild 实测兼容 18–24，`package.json` 已声明 `engines`）
-- [ ] **PowerShell 5.1**（Windows 10/11 自带，默认 shell）；装了 pwsh 则自动使用 PowerShell 7
+- [ ] **Shell**：Windows 默认 PowerShell 5.1/7；**Linux/macOS 默认用户登录 shell（bash/zsh，原生 Linux 终端）**
+
+> Linux 首次 `npm install` 若 node-pty 无匹配 prebuild，需本地编译链：
+> `sudo apt-get install -y build-essential python3`（UOS/Debian 系）
 
 不确定环境时先跑 `bash scripts/toy.sh doctor` 自检，全绿再安装。
 
@@ -180,7 +183,7 @@ bash scripts/toy.sh stop                      # 停止服务
 ## 边界与已知限制（一期）
 
 - **单用户单 agent** —— 多浏览器标签只有首连可输入；无鉴权（仅绑定 127.0.0.1 + Host/Origin 校验）
-- **PowerShell 5.1 或 7** —— 默认 `shell=auto` 自动优先 pwsh（PS7）否则回退 5.1；注入命令语法按 `status.shellVersion` 判断（5.1：单行分号；7：可用 `&&`/`??`/三元）。exit code 仅 native 命令可靠
+- **Shell 判定按 `status.kind`** —— `status.kind` 为 `powershell`（Windows）或 `posix`（Linux/macOS，bash/zsh/fish 原生终端）。posix 下 agent 按 bash 语法（`&&`、`||`、哨兵用 `$?`）；`status.shellVersion` 为主版本号（bash 5 / zsh 5 等）。exit code 仅 native 命令可靠
 - **交互程序内禁止 run 注入** —— vim/ssh/less 内用 `keys` 注入
 - **不跨重启持久** —— 机器重启 / stop 后会话丢失（agent 对话历史记忆兜底）；kill-session 后 `start` 自动重建
 - **输出含回显与 ANSI 序列** —— `output` 是终端流，解析时注意
@@ -189,10 +192,11 @@ bash scripts/toy.sh stop                      # 停止服务
 
 本 skill 经 grilling 设计树（20+ 决策）+ 子 agent 技术审查（13 项修正）后实现，关键坑记录：
 
-- `$LASTEXITCODE__` 变量吞并 bug（下划线属变量名）→ 花括号 + `[int]` 强制
+- `$LASTEXITCODE__` 变量吞并 bug（下划线属变量名）→ 花括号 + `[int]` 强制（PowerShell 分支）
 - node-pty 在 Node 22 下 PTY 退出后 resize 崩溃 → 全部 try/catch
-- PSReadLine 半行输入与注入拼接 → 注入前置 `\x03` 清行
-- Windows 浏览器自动打开 → `cmd //c start "" "URL"`
+- PSReadLine/readline 半行输入与注入拼接 → 注入前置 `\x03` 清行
+- Windows 浏览器自动打开 → `cmd //c start "" "URL"`；Linux → `xdg-open`
+- POSIX 哨兵：bash/zsh 用 `echo "..._$?__"` 携带上一条命令退出码，regex 只匹配数字结尾，天然区分 readline 回显与真实输出
 
 ---
 

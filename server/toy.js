@@ -33,6 +33,7 @@ const path = require('path');
 const fs = require('fs');
 const crypto = require('crypto');
 const { exec, spawnSync } = require('child_process');
+const os = require('os');
 const pty = require('node-pty');
 
 const ROOT = process.env.TOY_DIR || path.resolve(__dirname, '..');
@@ -67,8 +68,9 @@ function loadConfig() {
 const config = loadConfig();
 
 // ---------- shell 解析（config.shell 支持 auto） ----------
-// auto（默认）：优先 pwsh（PS7），找不到再查常见安装路径（pwsh 常不在 PATH），
-// 最后回退 powershell.exe（PS5.1，Windows 10/11 自带）。显式 shell= 时直接用。
+// auto（默认）：Windows 优先 pwsh（PS7），回退 powershell.exe（PS5.1）；
+// Linux/macOS 优先用户默认登录 shell（$SHELL），其次 bash → zsh → sh（原生 Linux 终端）。
+// 显式 shell= 时直接用。
 function resolveShell() {
   if (config.shell !== 'auto') return config.shell;
   if (process.platform === 'win32') {
@@ -79,19 +81,43 @@ function resolveShell() {
     }
     return 'powershell.exe';
   }
-  // 非 Windows（P1 实验支持）：pwsh → bash
-  const r = spawnSync('which', ['pwsh'], { encoding: 'utf8', timeout: 5000 });
-  if (r.status === 0 && r.stdout) return r.stdout.split('\n')[0].trim() || 'pwsh';
-  return 'bash';
+  // 非 Windows（Linux/macOS）：优先用户默认登录 shell，保证最「原生」
+  const defaultShell = process.env.SHELL;
+  if (defaultShell && fs.existsSync(defaultShell)) return defaultShell;
+  for (const c of ['/bin/bash', '/usr/bin/bash', '/bin/zsh', '/usr/bin/zsh', '/bin/fish', '/usr/bin/fish', '/bin/sh']) {
+    if (fs.existsSync(c)) return c;
+  }
+  // 兜底：由 POSIX sh 探测命令路径
+  const r = spawnSync('/bin/sh', ['-c', 'command -v bash || command -v zsh || command -v sh || echo /bin/sh'], { encoding: 'utf8', timeout: 5000 });
+  if (r.status === 0 && r.stdout && r.stdout.trim()) return r.stdout.trim();
+  return '/bin/sh';
+}
+
+// shell 类型判定：powershell（含 pwsh）或 posix（bash/sh/zsh/fish 等）。
+// 决定启动参数、注入哨兵语法与进程树 kill 方式。
+function shellKind(shell) {
+  const name = path.basename(shell).toLowerCase().replace(/\.exe$/, '');
+  if (/powershell|pwsh/.test(name)) return 'powershell';
+  return 'posix'; // 非 Windows 目标（UOS/Linux）默认按 POSIX shell 处理
 }
 const SHELL = resolveShell();
+const KINDS = shellKind(SHELL);
 
 // ---------- shell 版本探测 ----------
-// 取主版本号（如 5 / 7）存入状态；失败返回 null——agent 拿到 null 应保守按 5.1 规则。
+// 取主版本号（如 PowerShell 5/7、bash 5、zsh 5）存入状态；失败返回 null——
+// agent 拿到 null 应保守处理。POSIX shell 各自用内置版本变量捞主版本号。
+function posixVersionCmd(shell) {
+  const name = path.basename(shell).toLowerCase().replace(/\.exe$/, '');
+  if (name === 'bash') return 'echo "${BASH_VERSION%%[.-]*}"';
+  if (name === 'zsh') return 'echo "${ZSH_VERSION%%[.-]*}"';
+  if (name === 'fish') return 'echo "${FISH_VERSION%%[.-]*}"';
+  return 'echo 1'; // POSIX sh / dash / 其他：无统一版本号，保守返回 1
+}
+
 function detectShellVersion(shell) {
-  const args = /powershell|pwsh/i.test(shell)
+  const args = KINDS === 'powershell'
     ? ['-NoProfile', '-Command', '$PSVersionTable.PSVersion.Major']
-    : ['-c', 'echo ${BASH_VERSION%%[.-]*}'];
+    : ['-c', posixVersionCmd(shell)];
   try {
     const r = spawnSync(shell, args, { encoding: 'utf8', timeout: 8000 });
     if (r.error || r.status !== 0) return null;
@@ -166,14 +192,23 @@ function heartbeat() {
 }
 
 // ---------- PTY ----------
+// 按 shell 类型生成启动参数：
+//   PowerShell 传 -NoLogo/-NoProfile；POSIX 无需参数（node-pty 以前台交互方式分配 PTY）
+function shellArgsOf() {
+  if (KINDS === 'powershell') {
+    const args = ['-NoLogo'];
+    if (config.noProfile) args.push('-NoProfile');
+    return args;
+  }
+  return [];
+}
+
 function startSession() {
-  const shellArgs = ['-NoLogo'];
-  if (config.noProfile) shellArgs.push('-NoProfile');
-  const p = pty.spawn(SHELL, shellArgs, {
+  const p = pty.spawn(SHELL, shellArgsOf(), {
     name: 'xterm-256color',
     cols: 120,
     rows: 30,
-    cwd: process.env.USERPROFILE || os_homedir(),
+    cwd: oshomedir(),
     env: process.env,
   });
   state.pty = p;
@@ -219,7 +254,7 @@ function startSession() {
   });
 }
 
-function os_homedir() { return process.env.USERPROFILE || process.env.HOME || '.'; }
+function oshomedir() { return process.env.USERPROFILE || process.env.HOME || os.homedir() || '.'; }
 
 // ---------- run 生命周期 ----------
 function previewOf(cmd) {
@@ -228,15 +263,22 @@ function previewOf(cmd) {
 }
 
 function injectRun(run) {
-  // 前置 \x03 清当前编辑行（防 PSReadLine 拼接半行输入），再注入命令 + 哨兵
-  // 哨兵用 $([int]$LASTEXITCODE)：cmdlet 不更新 $LASTEXITCODE（首次为 $null），
-  // [int]$null → 0，保证哨兵总有数字（native 命令则携带真实退出码）
-  const sentinel = `Write-Output "__TOY_DONE_${run.token}_$([int]$LASTEXITCODE)__"`;
-  const cmd = run.cmd.replace(/\r?\n/g, '\r\n'); // PS 5.1 只认 \r\n
+  // 前置 \x03 清当前编辑行（防 PSReadLine / readline 拼接半行输入），再注入命令 + 哨兵
+  // 哨兵按 shell 类型生成：
+  //   powershell — Write-Output "..._$([int]$LASTEXITCODE)"：cmdlet 不更新
+  //     $LASTEXITCODE（首次为 $null），[int]$null → 0，保证总有数字（native 命令携带真实退出码）
+  //   posix      — echo "..._$?"：执行前 $? 即上一条命令的退出码（true/false 也展开为 0/1）
+  // 关键：readline/PSReadLine 回显的是**未展开**的原始文本（`$([int]$LASTEXITCODE)` / `$?`），
+  // 而 echo/Write-Output 输出的是已展开的数字——正则只匹配数字结尾，天然区分回显与真实输出。
+  const isPs = KINDS === 'powershell';
+  const sentinel = isPs
+    ? `Write-Output "__TOY_DONE_${run.token}_$([int]$LASTEXITCODE)__"`
+    : `echo "__TOY_DONE_${run.token}_$?__"`;
+  const cmd = run.cmd.replace(/\r?\n/g, isPs ? '\r\n' : '\n');
   state.pty.write(`\x03${cmd}; ${sentinel}\r`);
   state.current = run;
   run.outputBuf = '';
-  log('run start', `id=${run.id} len=${run.cmd.length}`);
+  log('run start', `id=${run.id} len=${run.cmd.length} shell=${KINDS}`);
 }
 
 function finishRun(run, status) {
@@ -358,10 +400,11 @@ const server = http.createServer(async (req, res) => {
       pid: process.pid,
       port: state.actualPort || config.port, // 实际监听端口（非配置端口）
       shell: SHELL,               // 解析后的实际 shell（含路径），非配置值 auto
-      shellVersion: SHELL_VERSION, // 5 | 7 | null（null = 探测失败，agent 保守按 5.1）
+      shellVersion: SHELL_VERSION, // PowerShell 5/7 | posix 主版本 | null（探测失败）
+      kind: KINDS,                // 'powershell' | 'posix' —— agent 据此选哨兵/语法
       replayBytes: state.replayBytes,
       clientCount: state.clients.size,
-      version: '0.2.0',
+      version: '0.3.0',
     });
 
     if (req.method === 'POST') {
@@ -504,12 +547,14 @@ function handleKill(req, res) {
   if (!state.pty) return sendJson(res, 409, { error: 'no_session' });
   state.killInFlight = true;
   const pid = state.pty.pid;
-  log('kill session', `pid=${pid}`);
-  exec(`taskkill /F /T /PID ${pid}`, (err) => {
+
+  // 杀进程树：Windows 用 taskkill /F /T；POSIX 用进程组信号（node-pty 在 Unix 上
+  // 通常使 spawn 进程成为进程组组长，pgid == pid，负数即杀整个进程组）
+  const finishKill = (err) => {
     state.killInFlight = false;
     if (err) {
-      // taskkill 失败不致命：PTY 可能已退出，强制结束会话
-      log('taskkill warn', err.message);
+      // 杀进程失败不致命：PTY 可能已退出，强制结束会话
+      log('kill warn', String(err && err.message || err));
       if (state.pty) {
         try { state.pty.kill(); } catch (e) { /* ignore */ }
       }
@@ -518,7 +563,20 @@ function handleKill(req, res) {
     }
     broadcast('state', stateEvent());
     sendJson(res, 200, { ok: true });
-  });
+  };
+
+  log('kill session', `pid=${pid} platform=${process.platform}`);
+  if (process.platform === 'win32') {
+    exec(`taskkill /F /T /PID ${pid}`, finishKill);
+  } else {
+    try {
+      process.kill(-pid, 'SIGTERM');            // 杀整个进程组（含子进程）
+      finishKill(null);
+    } catch (e) {
+      try { process.kill(pid, 'SIGTERM'); finishKill(null); } // 兜底：仅杀组长
+      catch (e2) { finishKill(e2); }
+    }
+  }
 }
 
 function handleReborn(req, res) {

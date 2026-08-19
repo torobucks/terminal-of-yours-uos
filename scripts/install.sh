@@ -71,7 +71,8 @@ check_env() {
     FAILED=1
   fi
 
-  # PowerShell：pwsh (PS7) 优先，无则回退 powershell.exe (PS5.1)
+  # 终端 shell：Windows 用 PowerShell（pwsh PS7 优先，回退 PS5.1）；
+  # Linux/macOS 原生用 POSIX shell（$SHELL 或 bash 优先），可选 pwsh
   if [[ "$OS" == "windows-gitbash" ]]; then
     if command -v pwsh >/dev/null 2>&1 || [[ -f "/c/Program Files/PowerShell/7/pwsh.exe" ]]; then
       ok "pwsh (PowerShell 7) 可用 — 将作为默认 shell"
@@ -79,7 +80,14 @@ check_env() {
       ok "未装 pwsh，回退 powershell.exe (PowerShell 5.1，Windows 10/11 自带)"
     fi
   else
-    if command -v pwsh >/dev/null 2>&1; then ok "pwsh 可用"; else warn "未找到 pwsh（非 Windows 为实验支持）"; fi
+    if command -v bash >/dev/null 2>&1; then
+      ok "bash 可用（原生 Linux 终端默认 shell${SHELL:+，$SHELL}）"
+    else
+      warn "未找到 bash（POSIX shell 缺失？将尝试 /bin/sh）"
+    fi
+    if command -v pwsh >/dev/null 2>&1; then
+      ok "pwsh (PowerShell 7) 可用 — 可通过 config.txt 显式 shell=pwsh 切换"
+    fi
   fi
 
   # node-pty 依赖
@@ -110,8 +118,11 @@ install_deps() {
     return 0
   else
     fail "npm install 失败。可能原因与解决："
-    echo "    - node-pty prebuild 与当前 Node 版本不匹配 → 用 nvm 切换到 18-24 再试"
-    echo "    - 本地编译链缺失（需 python + node-gyp + VS Build Tools）→ 优先升级/换 Node 版本"
+    echo "    - node-pty prebuild 与当前 Node/平台 不匹配 → 用 nvm 切换 Node 18-24 再试"
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*) echo "    - 本地编译链缺失（需 python + node-gyp + VS Build Tools）→ 优先升级/换 Node 版本" ;;
+      *)                    echo "    - 本地编译链缺失（需 make + gcc/g++ + python3）→ 在 UOS 上：sudo apt-get install -y build-essential python3" ;;
+    esac
     return 1
   fi
 }
