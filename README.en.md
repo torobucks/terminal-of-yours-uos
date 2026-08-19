@@ -66,7 +66,7 @@ If unsure about your environment, run `bash scripts/toy.sh doctor` for a self-ch
 ### One-click install (recommended)
 
 ```bash
-git clone https://github.com/qwerd53/terminal-of-yours.git TerminalOfYours
+git clone https://github.com/torobucks/terminal-of-yours-uos.git TerminalOfYours
 cd TerminalOfYours
 bash scripts/install.sh          # environment self-check + auto npm install node-pty
 bash scripts/toy.sh start        # start the service and open the browser automatically

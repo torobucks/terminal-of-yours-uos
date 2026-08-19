@@ -67,7 +67,7 @@
 ### 一键安装（推荐）
 
 ```bash
-git clone https://github.com/qwerd53/terminal-of-yours.git TerminalOfYours
+git clone https://github.com/torobucks/terminal-of-yours-uos.git TerminalOfYours
 cd TerminalOfYours
 bash scripts/install.sh          # 环境自检 + 自动 npm install node-pty
 bash scripts/toy.sh start        # 启动服务并自动打开浏览器
